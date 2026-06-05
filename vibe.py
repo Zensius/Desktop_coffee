@@ -4,7 +4,7 @@ import random
 
 class DesktopPet:
     def __init__(self):
-        self.DEBUG_MODE = True  # Set to False to hide the green debug box
+        self.DEBUG_MODE = False  # Set to False to hide the green debug box
         
         self.root = tk.Tk()
         self.root.overrideredirect(True)
@@ -35,6 +35,8 @@ class DesktopPet:
         # Initial State
         self.current_state = "idle"
         self.current_frame = 0
+        self.current_loop_count = 0  # Tracks how many times the animation has played
+        self.target_loops = 1        # How many loops to play before changing behavior
         
         initial_image = self.animations[self.current_state][self.current_frame]
         self.label = tk.Label(self.root, image=initial_image, bg=self.bg_color)
@@ -43,19 +45,15 @@ class DesktopPet:
         # -------------------------------------------------------------
         # 2. SCREEN CONSTRAINTS & POSITIONING
         # -------------------------------------------------------------
-        # Get actual screen dimensions dynamically
         self.screen_width = self.root.winfo_screenwidth()
         self.screen_height = self.root.winfo_screenheight()
         
-        # We need to wait a split second for Tkinter to draw the widget 
-        # so we can accurately read the pet's pixel width.
         self.root.update_idletasks()
         self.pet_width = self.label.winfo_reqwidth()
         self.pet_height = self.label.winfo_reqheight()
 
-        # Start near the bottom right of the screen (above the taskbar)
-        self.x = self.screen_width // 2
-        self.y = self.screen_height - self.pet_height - 60 
+        self.x = self.screen_width // 3
+        self.y = self.screen_height - self.pet_height - 30 
         self.root.geometry(f"+{self.x}+{self.y}")
 
         # Interaction / Brain variables
@@ -74,8 +72,8 @@ class DesktopPet:
         self.update_animation()
         self.update_movement()
         
-        # Kick off the random behavior brain!
-        self.root.after(10000, self.pet_brain) 
+        # Kick off the first decision natively (No root.after timer needed anymore)
+        self.pet_brain() 
         
         self.root.mainloop()
 
@@ -95,7 +93,6 @@ class DesktopPet:
                 except tk.TclError:
                     break
         
-        # Fallback security: If any custom animation is missing, map it to 'idle'
         for state in self.animation_files.keys():
             if state not in self.animations or not self.animations[state]:
                 if "idle" in self.animations and self.animations["idle"]:
@@ -109,26 +106,36 @@ class DesktopPet:
             self.current_frame = 0
 
     # -------------------------------------------------------------
-    # 3. RANDOM BEHAVIOR BRAIN
+    # 3. RANDOM BEHAVIOR BRAIN (Loop-Based)
     # -------------------------------------------------------------
     def pet_brain(self):
-        """Dictates what the pet wants to do next based on probabilities."""
-        # Only switch behaviors if the user isn't currently messing with it
+        """Decides the next behavior and how many times it will loop."""
         if not self.is_interacting:
-            # List of possible random choices
             choices = ["idle", "walk_left", "walk_right", "groom", "look_around"]
-            next_behavior = random.choice(choices)
-            
+            next_behavior = random.choices(choices, weights=[7,1,1,3,5], k=1)[0]
             self.change_state(next_behavior)
             
-        # How long should it stay in this behavior? (Pick a random time between 2 to 6 seconds)
-        next_brain_tick = random.randint(10000, 30000)
-        self.root.after(next_brain_tick, self.pet_brain)
+            # Determine how many full animation cycles to perform before thinking again
+            self.target_loops = random.randint(2, 6) 
+            self.current_loop_count = 0
+            
+            # Notice there is no self.root.after() here anymore. 
+            # The animation loop handles triggering the brain now.
 
     def update_animation(self):
         active_frames = self.animations[self.current_state]
         if active_frames:
-            self.current_frame = (self.current_frame + 1) % len(active_frames)
+            self.current_frame += 1
+            
+            # Check if the animation just finished a full loop
+            if self.current_frame >= len(active_frames):
+                self.current_frame = 0
+                self.current_loop_count += 1
+                
+                # If we've hit our target loops, time for the brain to pick a new behavior
+                if self.current_loop_count >= self.target_loops and not self.is_interacting:
+                    self.pet_brain()
+                    
             self.label.config(image=active_frames[self.current_frame])
             
         self.root.after(100, self.update_animation)
@@ -138,18 +145,14 @@ class DesktopPet:
     # -------------------------------------------------------------
     def update_movement(self):
         if not self.is_interacting:
-            # Move Left
             if self.current_state == "walk_left":
                 self.x -= 1
-                # If hit left screen border, force turn right
                 if self.x < 0:
                     self.x = 0
                     self.change_state("walk_right")
             
-            # Move Right
             elif self.current_state == "walk_right":
                 self.x += 1
-                # If hit right screen border (Screen Width minus Pet Width), force turn left
                 if self.x > (self.screen_width - self.pet_width):
                     self.x = self.screen_width - self.pet_width
                     self.change_state("walk_left")
@@ -160,30 +163,26 @@ class DesktopPet:
 
     # --- DRAG LOGIC ---
     def start_drag(self, event):
-        self.is_interacting = True
-        self.change_state("idle") 
+        # We no longer force "idle" or set is_interacting. 
+        # This lets the pet keep doing its current animation while you drag it.
         self.drag_start_x = event.x
         self.drag_start_y = event.y
 
     def drag_motion(self, event):
-        # Allow dragging anywhere, but constrain it inside screen width limits
         calculated_x = self.root.winfo_x() + (event.x - self.drag_start_x)
         self.y = self.root.winfo_y() + (event.y - self.drag_start_y)
         
-        # Clamp X position to screen bounds during a drag
         self.x = max(0, min(calculated_x, self.screen_width - self.pet_width))
         self.root.geometry(f"+{self.x}+{self.y}")
 
     def stop_drag(self, event):
-        if not self.popup_window or not tk.Toplevel.winfo_exists(self.popup_window):
-            self.is_interacting = False
-            # Let the brain automatically decide what to do immediately upon dropping
-            self.pet_brain()
+        # We completely removed the self.pet_brain() call here to stop the exponential timer bug.
+        pass
 
     # --- POPUP LOGIC ---
     def open_popup(self, event):
         self.is_interacting = True
-        self.change_state("look_around") # Looks at menu options
+        self.change_state("idle") 
 
         if self.popup_window and tk.Toplevel.winfo_exists(self.popup_window):
             self.popup_window.focus_set()
