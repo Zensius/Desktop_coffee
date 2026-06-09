@@ -22,11 +22,12 @@ class DesktopPet:
         # 1. EXPANDED ANIMATION FILES
         # -------------------------------------------------------------
         self.animation_files = {
-            "idle": "personal/pet_idle.gif",
-            "walk_left": "personal/pet_walk_left.gif",
-            "walk_right": "personal/pet_walk_right.gif",
-            "groom": "personal/pet_groom.gif",
-            "look_around": "personal/pet_look.gif"
+            "idle": "gif/pet_idle.gif",
+            "idle2": "gif/pet_idle2.gif",
+            "walk_left": "gif/pet_move_left.gif",
+            "walk_right": "gif/pet_move_right.gif",
+            "sleep": "gif/pet_sleep.gif",
+            "sit": "gif/pet_sit.gif"
         }
         
         self.animations = {}
@@ -77,9 +78,24 @@ class DesktopPet:
         
         self.root.mainloop()
 
+    def resource_path(self, relative_path):
+        """ Get absolute path to resource, works for dev and for PyInstaller """
+        import sys
+        try:
+            # PyInstaller creates a temp folder and stores path in _MEIPASS
+            base_path = sys._MEIPASS
+        except Exception:
+            base_path = os.path.abspath(".")
+
+        return os.path.join(base_path, relative_path)
+    
     def load_all_animations(self):
-        for state_name, file_path in self.animation_files.items():
+        for state_name, relative_path in self.animation_files.items():
             self.animations[state_name] = []
+            
+            # --- UPDATE THIS LINE TO USE THE HELPER ---
+            file_path = self.resource_path(relative_path)
+            
             if not os.path.exists(file_path):
                 print(f"Warning: {file_path} not found. Using 'idle' fallback.")
                 continue
@@ -111,8 +127,8 @@ class DesktopPet:
     def pet_brain(self):
         """Decides the next behavior and how many times it will loop."""
         if not self.is_interacting:
-            choices = ["idle", "walk_left", "walk_right", "groom", "look_around"]
-            next_behavior = random.choices(choices, weights=[7,1,1,3,5], k=1)[0]
+            choices = ["sit", "idle", "idle2", "sleep", "walk_left", "walk_right"]
+            next_behavior = random.choices(choices, weights=[7,1,1,1,3,3], k=1)[0]
             self.change_state(next_behavior)
             
             # Determine how many full animation cycles to perform before thinking again
@@ -198,8 +214,9 @@ class DesktopPet:
         tk.Button(self.popup_window, text="Feed Pet", command=lambda: print("Nom nom nom")).pack(pady=5)
         tk.Button(self.popup_window, text="Close Menu", command=self.close_popup).pack(pady=5)
 
-        self.popup_window.protocol("WM_DELETE_WINDOW", self.close_popup)
+        tk.Button(self.popup_window, text="Exit Desktop Pet", command=self.root.destroy, fg="red").pack(pady=5)
 
+        self.popup_window.protocol("WM_DELETE_WINDOW", self.close_popup)
     def close_popup(self):
         if self.popup_window:
             self.popup_window.destroy()
